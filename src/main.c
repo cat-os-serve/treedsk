@@ -10,237 +10,6 @@
 #include<sys/ioctl.h>
 #include<linux/fs.h>
 
-typedef struct _node Node;
-
-struct _node {
-	uint64_t	value;
-	Node*		parent;
-	Node*		left;
-	Node*		right;
-	Node*		lchild;
-	Node*		rchild;
-	uint64_t	lcount;
-	uint64_t	rcount;
-
-	uint64_t	lupval;
-	uint64_t	rupval;
-	uint8_t		is_real;
-	uint8_t		pad1[47];
-};
-
-Node *makeroot (Node *root) {
-	root->parent = (Node *)0;
-	root->left = (Node *)0;
-	root->right = (Node *)0;
-	root->lchild = (Node *)0;
-	root->rchild = (Node *)0;
-	root->lcount = 0;
-	root->rcount = 0;
-	root->lupval = 0;
-	root->rupval = 0xffffffffffffffffULL;
-	root->is_real = 0;
-	return root;
-}
-
-Node *search (Node *root, uint64_t value) {
-	Node *curr = root;
-	while (1) {
-		if (value > curr->value) {
-			if (!(curr->rchild)) { return (Node *)0; }
-			curr = curr->rchild;
-		else if (value < curr->value) {
-			if (!(curr->lchild)) { return (Node *)0; }
-			curr = curr->lchild;
-		else { return curr; }
-	}
-	return (Node *)0;
-}
-
-Node *insert (Node *root, Node *value) {
-	Node *curr = root;
-	Node *left = (Node *)0;
-	Node *right = (Node *)0;
-	uint64_t lupval = root->lupval;
-	uint64_t rupval = root->rupval;
-	while (1) {
-		if (value->value > curr->value) {
-			left = curr;
-			lupval = curr->value;
-			curr->rcount += 1;
-			if (curr->rchild == (Node *)0) {
-				curr->rchild = value;
-				value->parent = curr;
-				value->left = left;
-				value->right = right;
-				value->lchild = (Node *)0;
-				value->rchild = (Node *)0;
-				value->lcount = 0;
-				value->rcount = 0;
-				value->lupval = lupval;
-				value->rupval = rupval;
-				if (left != (Node *)0) { left->right = value; }
-				if (right != (Node *)0) { right->left = value; }
-				break;
-			} else {
-				curr = curr->rchild;
-			}
-		} else {
-			right = curr;
-			rupval = curr->value;
-			curr->lcount += 1;
-			if (curr->lchild == (Node *)0) {
-				curr->lchild = value;
-				value->parent = curr;
-				value->left = left;
-				value->right = right;
-				value->lchild = (Node *)0;
-				value->rchild = (Node *)0;
-				value->lcount = 0;
-				value->rcount = 0;
-				value->lupval = lupval;
-				value->rupval = rupval;
-				if (left != (Node *)0) { left->right = value; }
-				if (right != (Node *)0) { right->left = value; }
-				break;
-			} else {
-				curr = curr->lchild;
-			}
-		}
-	}
-	return root;
-}
-
-Node *rebalance(Node *root, uint64_t threshold) {
-	if ((!root) || (root->lcount + root->rcount < 2)) { return root; }
-	while (root->rcount > root->lcount + 1) {
-		if (root->rchild == root->right) {
-			root->right->lupval = root->lupval;
-			root->right->rupval = root->rupval;
-			root->rupval = root->right->value;
-			root->parent = root->right;
-			root->parent->parent = (Node *)0;
-			root->parent->lchild = root;
-			root->rchild = (Node *)0;
-			root->parent->lcount = root->lcount + 1;
-			root->rcount = 0;
-			root = root->parent;
-		} else {
-			Node *old_l = root->lchild;
-			root->rcount -= 1;
-			Node *curr = root->rchild;
-			while (curr && (curr->lchild)) {
-				curr->lcount -= 1;
-				curr->lupval = root->right->value;
-				curr = curr->lchild;
-			}
-			root->right->parent->lchild = root->right->rchild;
-			if (root->right->rchild) { root->right->rchild->parent = root->right->parent; }
-			root->right->parent = (Node *)0;
-			root->right->lchild = root->lchild;
-			root->right->rchild = root->rchild;
-			root->right->lcount = root->lcount;
-			root->right->rcount = root->rcount;
-			root->right->lupval = root->lupval;
-			root->right->rupval = root->rupval;
-			if (root->right->lchild) { root->right->lchild->parent = root->right; }
-			if (root->right->rchild) { root->right->rchild->parent = root->right; }
-			root->lchild = (Node *)0;
-			root->rchild = (Node *)0;
-			root->lcount = 0;
-			root->rcount = 0;
-			root->rupval = root->right->value;
-			if (old_l) {
-				curr = old_l;
-				while (curr->rchild) {
-					curr->rcount += 1;
-					curr->rupval = root->right->value;
-					curr = curr->rchild;
-				}
-				root->left->rupval = root->right->value;
-				root->parent = root->left;
-				root->left->rchild = root;
-				root->left->rcount = 1;
-				root->right->lcount += 1;
-				root->lupval = root->left->value;
-			} else {
-				root->parent = root->right;
-				root->right->lchild = root;
-				root->right->lcount = 1;
-				root->lupval = root->right->lupval;
-			}
-			root = root->right;
-		}
-	}
-	while (root->lcount > root->rcount + 1) {
-		if (root->lchild == root->left) {
-			root->left->lupval = root->lupval;
-			root->left->rupval = root->rupval;
-			root->lupval = root->left->value;
-			root->parent = root->left;
-			root->parent->parent = (Node *)0;
-			root->parent->rchild = root;
-			root->lchild = (Node *)0;
-			root->parent->rcount = root->rcount + 1;
-			root->lcount = 0;
-			root = root->parent;
-		} else {
-			Node *old_r = root->rchild;
-			root->lcount -= 1;
-			Node *curr = root->lchild;
-			while (curr && (curr->rchild)) {
-				curr->rcount -= 1;
-				curr->rupval = root->left->value;
-				curr = curr->rchild;
-			}
-			root->left->parent->rchild = root->left->lchild;
-			if (root->left->lchild) { root->left->lchild->parent = root->left->parent; }
-			root->left->parent = (Node *)0;
-			root->left->lchild = root->lchild;
-			root->left->rchild = root->rchild;
-			root->left->lcount = root->lcount;
-			root->left->rcount = root->rcount;
-			root->left->lupval = root->lupval;
-			root->left->rupval = root->rupval;
-			if (root->left->lchild) { root->left->lchild->parent = root->left; }
-			if (root->left->rchild) { root->left->rchild->parent = root->left; }
-			root->lchild = (Node *)0;
-			root->rchild = (Node *)0;
-			root->lcount = 0;
-			root->rcount = 0;
-			root->lupval = root->left->value;
-			if (old_r) {
-				curr = old_r;
-				while (curr->lchild) {
-					curr->lcount += 1;
-					curr->lupval = root->left->value;
-					curr = curr->lchild;
-				}
-				root->right->lupval = root->left->value;
-				root->parent = root->right;
-				root->right->lchild = root;
-				root->right->lcount = 1;
-				root->left->rcount += 1;
-				root->rupval = root->right->value;
-			} else {
-				root->parent = root->left;
-				root->left->rchild = root;
-				root->left->rcount = 1;
-				root->rupval = root->left->rupval;
-			}
-			root = root->left;
-		}
-	}
-	if (root->lchild && (root->lchild->lcount + root->lchild->rcount >= threshold)) {
-		root->lchild = rebalance(root->lchild, threshold);
-		root->lchild->parent = root;
-	}
-	if (root->rchild && (root->rchild->lcount + root->rchild->rcount >= threshold)) {
-		root->rchild = rebalance(root->rchild, threshold);
-		root->rchild->parent = root;
-	}
-	return root;
-}
-
 #define SIGNATURE_1	0x6873616865657274ULL
 #define SIGNATURE_2	0x656c6966736e6962ULL
 
@@ -249,20 +18,285 @@ Node *rebalance(Node *root, uint64_t threshold) {
 #define REGION_TYPE_RAWDATA	0x02
 #define REGION_TYPE_NODE_EXTEND	0x03
 
+typedef uint64_t index_t;
+
+typedef struct _node Node;
+
+struct _node {
+	uint64_t	value;
+	index_t		parent;
+	index_t		left;
+	index_t		right;
+	index_t		lchild;
+	index_t		rchild;
+	uint64_t	lcount;
+	uint64_t	rcount;
+
+	uint64_t	lupval;
+	uint64_t	rupval;
+	uint8_t		is_real;
+	uint8_t		npad1[47];
+};
+
 typedef struct _metadata Metadata;
 
 struct _metadata {
 	uint64_t	sig1;
 	uint64_t	sig2;
-	Node*		root;
+	index_t		root;
 	uint64_t	region_count;
 	uint64_t	region_size;
 	uint64_t	region_index;
 	uint64_t	size_filled;
+	uint64_t	size_exfilled;
 	uint8_t		region_type;
-	uint8_t		pad1[7];
-	uint64_t	pad2[8];
+	uint8_t		mpad1[63];
 };
+
+typedef union _block Block;
+
+union _block {
+	char			r[128];
+	struct {
+		uint64_t	value;
+		index_t		parent;
+		index_t		left;
+		index_t		right;
+		index_t		lchild;
+		index_t		rchild;
+		uint64_t	lcount;
+		uint64_t	rcount;
+		uint64_t	lupval;
+		uint64_t	rupval;
+		uint8_t		is_real;
+		uint8_t		npad1[47];
+	};
+	struct {
+		uint64_t	sig1;
+		uint64_t	sig2;
+		index_t		root;
+		uint64_t	region_count;
+		uint64_t	region_size;
+		uint64_t	region_index;
+		uint64_t	size_filled;
+		uint64_t	size_exfilled;
+		uint8_t		region_type;
+		uint8_t		mpad1[63];
+	};
+};
+
+Node *makeroot (Node *root) {
+	root->parent = -1;
+	root->left = -1;
+	root->right = -1;
+	root->lchild = -1;
+	root->rchild = -1;
+	root->lcount = 0;
+	root->rcount = 0;
+	root->lupval = 0;
+	root->rupval = 0xffffffffffffffffULL;
+	root->is_real = 0;
+	return root;
+}
+
+index_t search (Block *mmptr, index_t root, uint64_t value) {
+	index_t curr = root;
+	while (1) {
+		if (value > mmptr[curr].value) {
+			if (mmptr[curr].rchild == -1) { return -1; }
+			curr = mmptr[curr].rchild;
+		} else if (value < mmptr[curr].value) {
+			if (mmptr[curr].lchild == -1) { return -1; }
+			curr = mmptr[curr].lchild;
+		} else { return curr; }
+	}
+	return -1;
+}
+
+index_t insert (Block *mmptr, index_t root, index_t value) {
+	index_t curr = root;
+	index_t left = -1;
+	index_t right = -1;
+	uint64_t lupval = mmptr[root].lupval;
+	uint64_t rupval = mmptr[root].rupval;
+	while (1) {
+		if (mmptr[value].value > mmptr[curr].value) {
+			left = curr;
+			lupval = mmptr[curr].value;
+			mmptr[curr].rcount += 1;
+			if (mmptr[curr].rchild == -1) {
+				mmptr[curr].rchild = value;
+				mmptr[value].parent = curr;
+				mmptr[value].left = left;
+				mmptr[value].right = right;
+				mmptr[value].lchild = -1;
+				mmptr[value].rchild = -1;
+				mmptr[value].lcount = 0;
+				mmptr[value].rcount = 0;
+				mmptr[value].lupval = lupval;
+				mmptr[value].rupval = rupval;
+				if (left != -1) { mmptr[left].right = value; }
+				if (right != -1) { mmptr[right].left = value; }
+				break;
+			} else {
+				curr = mmptr[curr].rchild;
+			}
+		} else {
+			right = curr;
+			rupval = mmptr[curr].value;
+			mmptr[curr].lcount += 1;
+			if (mmptr[curr].lchild == -1) {
+				mmptr[curr].lchild = value;
+				mmptr[value].parent = curr;
+				mmptr[value].left = left;
+				mmptr[value].right = right;
+				mmptr[value].lchild = -1;
+				mmptr[value].rchild = -1;
+				mmptr[value].lcount = 0;
+				mmptr[value].rcount = 0;
+				mmptr[value].lupval = lupval;
+				mmptr[value].rupval = rupval;
+				if (left != -1) { mmptr[left].right = value; }
+				if (right != -1) { mmptr[right].left = value; }
+				break;
+			} else {
+				curr = mmptr[curr].lchild;
+			}
+		}
+	}
+	return root;
+}
+
+index_t rebalance(Block *mmptr, index_t root, uint64_t threshold) {
+	if ((root == -1) || (mmptr[root].lcount + mmptr[root].rcount < 2)) { return root; }
+	while (mmptr[root].rcount > mmptr[root].lcount + 1) {
+		if (mmptr[root].rchild == mmptr[root].right) {
+			mmptr[mmptr[root].right].lupval = mmptr[root].lupval;
+			mmptr[mmptr[root].right].rupval = mmptr[root].rupval;
+			mmptr[root].rupval = mmptr[mmptr[root].right].value;
+			mmptr[root].parent = mmptr[root].right;
+			mmptr[mmptr[root].parent].parent = -1;
+			mmptr[mmptr[root].parent].lchild = root;
+			mmptr[root].rchild = -1;
+			mmptr[mmptr[root].parent].lcount = mmptr[root].lcount + 1;
+			mmptr[root].rcount = 0;
+			root = mmptr[root].parent;
+		} else {
+			index_t old_l = mmptr[root].lchild;
+			mmptr[root].rcount -= 1;
+			index_t curr = mmptr[root].rchild;
+			while ((curr != -1) && (mmptr[curr].lchild != -1)) {
+				mmptr[curr].lcount -= 1;
+				mmptr[curr].lupval = mmptr[mmptr[root].right].value;
+				curr = mmptr[curr].lchild;
+			}
+			mmptr[mmptr[mmptr[root].right].parent].lchild = mmptr[mmptr[root].right].rchild;
+			if (mmptr[mmptr[root].right].rchild != -1) { mmptr[mmptr[mmptr[root].right].rchild].parent = mmptr[mmptr[root].right].parent; }
+			mmptr[mmptr[root].right].parent = -1;
+			mmptr[mmptr[root].right].lchild = mmptr[root].lchild;
+			mmptr[mmptr[root].right].rchild = mmptr[root].rchild;
+			mmptr[mmptr[root].right].lcount = mmptr[root].lcount;
+			mmptr[mmptr[root].right].rcount = mmptr[root].rcount;
+			mmptr[mmptr[root].right].lupval = mmptr[root].lupval;
+			mmptr[mmptr[root].right].rupval = mmptr[root].rupval;
+			if (mmptr[mmptr[root].right].lchild != -1) { mmptr[mmptr[mmptr[root].right].lchild].parent = mmptr[root].right; }
+			if (mmptr[mmptr[root].right].rchild != -1) { mmptr[mmptr[mmptr[root].right].rchild].parent = mmptr[root].right; }
+			mmptr[root].lchild = -1;
+			mmptr[root].rchild = -1;
+			mmptr[root].lcount = 0;
+			mmptr[root].rcount = 0;
+			mmptr[root].rupval = mmptr[mmptr[root].right].value;
+			if (old_l != -1) {
+				curr = old_l;
+				while (mmptr[curr].rchild) {
+					mmptr[curr].rcount += 1;
+					mmptr[curr].rupval = mmptr[mmptr[root].right].value;
+					curr = mmptr[curr].rchild;
+				}
+				mmptr[mmptr[root].left].rupval = mmptr[mmptr[root].right].value;
+				mmptr[root].parent = mmptr[root].left;
+				mmptr[mmptr[root].left].rchild = root;
+				mmptr[mmptr[root].left].rcount = 1;
+				mmptr[mmptr[root].right].lcount += 1;
+				mmptr[root].lupval = mmptr[mmptr[root].left].value;
+			} else {
+				mmptr[root].parent = mmptr[root].right;
+				mmptr[mmptr[root].right].lchild = root;
+				mmptr[mmptr[root].right].lcount = 1;
+				mmptr[root].lupval = mmptr[mmptr[root].right].lupval;
+			}
+			root = mmptr[root].right;
+		}
+	}
+	while (mmptr[root].lcount > mmptr[root].rcount + 1) {
+		if (mmptr[root].lchild == mmptr[root].left) {
+			mmptr[mmptr[root].left].lupval = mmptr[root].lupval;
+			mmptr[mmptr[root].left].rupval = mmptr[root].rupval;
+			mmptr[root].lupval = mmptr[mmptr[root].left].value;
+			mmptr[root].parent = mmptr[root].left;
+			mmptr[mmptr[root].parent].parent = -1;
+			mmptr[mmptr[root].parent].rchild = root;
+			mmptr[root].lchild = -1;
+			mmptr[mmptr[root].parent].rcount = mmptr[root].rcount + 1;
+			mmptr[root].lcount = 0;
+			root = mmptr[root].parent;
+		} else {
+			index_t old_r = mmptr[root].rchild;
+			mmptr[root].lcount -= 1;
+			index_t curr = mmptr[root].lchild;
+			while ((curr != -1) && (mmptr[curr].rchild != -1)) {
+				mmptr[curr].rcount -= 1;
+				mmptr[curr].rupval = mmptr[mmptr[root].left].value;
+				curr = mmptr[curr].rchild;
+			}
+			mmptr[mmptr[mmptr[root].left].parent].rchild = mmptr[mmptr[root].left].lchild;
+			if (mmptr[mmptr[root].left].lchild != -1) { mmptr[mmptr[mmptr[root].left].lchild].parent = mmptr[mmptr[root].left].parent; }
+			mmptr[mmptr[root].left].parent = -1;
+			mmptr[mmptr[root].left].lchild = mmptr[root].lchild;
+			mmptr[mmptr[root].left].rchild = mmptr[root].rchild;
+			mmptr[mmptr[root].left].lcount = mmptr[root].lcount;
+			mmptr[mmptr[root].left].rcount = mmptr[root].rcount;
+			mmptr[mmptr[root].left].lupval = mmptr[root].lupval;
+			mmptr[mmptr[root].left].rupval = mmptr[root].rupval;
+			if (mmptr[mmptr[root].left].lchild != -1) { mmptr[mmptr[mmptr[root].left].lchild].parent = mmptr[root].left; }
+			if (mmptr[mmptr[root].left].rchild != -1) { mmptr[mmptr[mmptr[root].left].rchild].parent = mmptr[root].right; }
+			mmptr[root].lchild = -1;
+			mmptr[root].rchild = -1;
+			mmptr[root].lcount = 0;
+			mmptr[root].rcount = 0;
+			mmptr[root].lupval = mmptr[mmptr[root].left].value;
+			if (old_r != -1) {
+				curr = old_r;
+				while (mmptr[curr].lchild != -1) {
+					mmptr[curr].lcount += 1;
+					mmptr[curr].lupval = mmptr[mmptr[root].left].value;
+					curr = mmptr[curr].lchild;
+				}
+				mmptr[mmptr[root].right].lupval = mmptr[mmptr[root].left].value;
+				mmptr[root].parent = mmptr[root].right;
+				mmptr[mmptr[root].right].lchild = root;
+				mmptr[mmptr[root].right].lcount = 1;
+				mmptr[mmptr[root].left].rcount += 1;
+				mmptr[root].rupval = mmptr[mmptr[root].right].value;
+			} else {
+				mmptr[root].parent = mmptr[root].left;
+				mmptr[mmptr[root].left].rchild = root;
+				mmptr[mmptr[root].left].rcount = 1;
+				mmptr[root].rupval = mmptr[mmptr[root].left].rupval;
+			}
+			root = mmptr[root].left;
+		}
+	}
+	if ((mmptr[root].lchild != -1) && (mmptr[mmptr[root].lchild].lcount + mmptr[mmptr[root].lchild].rcount >= threshold)) {
+		mmptr[root].lchild = rebalance(mmptr, mmptr[root].lchild, threshold);
+		mmptr[mmptr[root].lchild].parent = root;
+	}
+	if ((mmptr[root].rchild != -1) && (mmptr[mmptr[root].rchild].lcount + mmptr[mmptr[root].rchild].rcount >= threshold)) {
+		mmptr[root].rchild = rebalance(mmptr, mmptr[root].rchild, threshold);
+		mmptr[mmptr[root].rchild].parent = root;
+	}
+	return root;
+}
 
 static int format(int fd) {
 	char buffer[64];
@@ -314,12 +348,13 @@ static int format(int fd) {
 		memset(&mdata, 0, sizeof(mdata));
 		mdata.sig1 = SIGNATURE_1;
 		mdata.sig2 = SIGNATURE_2;
-		mdata.root = (Node *)128;
+		mdata.root = 1;
 		mdata.region_count = region_count;
 		mdata.region_size = region_blocks;
 		mdata.region_index = i;
 		mdata.region_type = ((i == 0)? REGION_TYPE_NODES : REGION_TYPE_NULL);
 		mdata.size_filled = ((i == 0)? 1 : 0);
+		mdata.size_exfilled = 0;
 		if (pwrite(fd, &mdata, 128, region_offset) != 128) { return -1; }
 	}
 	Node root_node;
@@ -366,7 +401,18 @@ int main(int argc, char **argv) {
 	
 	printf("\n\nDevice (?already?) formatted: %llu regions of %llu bytes, root at offset %llu\n", mdata.region_count, mdata.region_size * 128, mdata.root);
 	
-	void *mmptr = mmap(0, mdata.region_count * mdata.region_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (!mmptr) { return 0; }
-	// add actual cacher
+	Block *mmptr = (Block *)mmap(0, mdata.region_count * mdata.region_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (!mmptr) { return 5; }
+	if (mdata.region_size <= (1 << 21)) {
+		ssize_t n;
+		uint64_t i = 0;
+		while (1) {
+			if (mprotect((void *)(((uint64_t)mmptr) + i * mdata.region_size * 128), mdata.region_size * 128, PROT_READ | PROT_WRITE)) { return 6; }
+			n = pread(fd, (void *)(((uint64_t)mmptr) + (i * mdata.region_size * 128)), mdata.region_size * 128, i * mdata.region_size * 128);
+			if (n != mdata.region_size * 128) { fprintf(stderr, "pread: general reads\n"); return 7; }
+			if ((i == mdata.region_count - 1) || (((Metadata *)(((uint64_t)mmptr) + i * mdata.region_size * 128))->region_type == REGION_TYPE_NULL)) { break; }
+		}
+	}
+	// continue caching mechanism
+	return -1;
 }
